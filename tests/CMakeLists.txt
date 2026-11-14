@@ -12,7 +12,7 @@ if(NOT Catch2_FOUND)
   FetchContent_MakeAvailable(Catch2)
 endif()
 
-add_executable(memory_allocators_tests arena_test.cpp)
+add_executable(memory_allocators_tests arena_test.cpp freelist_test.cpp)
 
 target_link_libraries(
   memory_allocators_tests
