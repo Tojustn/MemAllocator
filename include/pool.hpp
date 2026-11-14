@@ -16,7 +16,7 @@ public:
   };
 
   T* allocate() {
-    if (end_ == nullptr ||) {
+    if (end_ == nullptr || end_ - cursor_ < OBJECT_ALIGNED_SIZE) {
       cursor_ = fetchNewBlock() + REGION_HEADER_SIZE;
       end_ = cursor_ + BLOCK_CAPACITY;
     }
@@ -40,6 +40,7 @@ private:
   static constexpr std::size_t REGION_HEADER_SIZE =
       (sizeof(MmapRegion) + alignof(MmapRegion) - 1) & ~(alignof(MmapRegion) - 1);
   static constexpr std::size_t BLOCK_CAPACITY = REGION_SIZE - REGION_HEADER_SIZE;
+  // GEt the aligned size
   static constexpr std::size_t OBJECT_ALIGNED_SIZE = (OBJECT_SIZE + alignof(T) - 1) & ~(alignof(T) - 1);
 
   FreeSlot* free_slot_{nullptr};
