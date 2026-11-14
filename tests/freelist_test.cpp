@@ -3,14 +3,50 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#endif
 
 namespace {
 constexpr std::size_t alignment = alignof(std::max_align_t);
 constexpr std::size_t regionHeaderSize = (sizeof(MmapRegion) + alignment - 1) & ~(alignment - 1);
 constexpr std::size_t blockCapacity = 4096 - regionHeaderSize - sizeof(FreeNodeHeader);
+// Return 1 for mapped memory, 0 for unmapped memory, -1 for query errors.
+int mappingState(void* base) {
+#if defined(__APPLE__)
+  const auto requested = reinterpret_cast<mach_vm_address_t>(base);
+  mach_vm_address_t address = requested;
+  mach_vm_size_t size = 0;
+  vm_region_basic_info_data_64_t info{};
+  mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+  mach_port_t object = MACH_PORT_NULL;
+  const auto result = mach_vm_region(mach_task_self(), &address, &size,
+      VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info), &count, &object);
+  if (object != MACH_PORT_NULL) {
+    mach_port_deallocate(mach_task_self(), object);
+  }
+  if (result == KERN_INVALID_ADDRESS) {
+    return 0;
+  }
+  if (result != KERN_SUCCESS) {
+    return -1;
+  }
+  // The query can return the next mapping after an unmapped address.
+  return address <= requested && requested - address < size ? 1 : 0;
+#else
+  unsigned char residency = 0;
+  if (mincore(base, 1, &residency) == 0) {
+    return 1;
+  }
+  return errno == ENOMEM ? 0 : -1;
+#endif
+}
 } // namespace
 
 TEST_CASE("freelist rejects invalid allocation sizes", "[freelist][basic]") {
@@ -85,4 +121,95 @@ TEST_CASE("freelist reuses a small freed block without overlapping a live neighb
   for (std::size_t i = 0; i < 64; ++i) {
     REQUIRE(neighbor[i] == 0x5a);
   }
+}
+
+TEST_CASE("freelist coalesces adjacent blocks in either direction", "[freelist][coalescing]") {
+  FreeListAllocator allocator;
+  void* first = allocator.allocate(64);
+  void* second = allocator.allocate(64);
+  auto* guard = static_cast<unsigned char*>(allocator.allocate(64));
+  std::memset(guard, 0x5a, 64);
+
+  SECTION("forward: free the later block first") {
+    allocator.deallocate(second);
+    allocator.deallocate(first);
+  }
+  SECTION("backward: free the earlier block first") {
+    allocator.deallocate(first);
+    allocator.deallocate(second);
+  }
+
+  // Neither individual block can satisfy this request.
+  auto* merged = static_cast<unsigned char*>(allocator.allocate(128));
+  REQUIRE(merged == first);
+  std::memset(merged, 0xa5, 128);
+  for (std::size_t i = 0; i < 64; ++i) {
+    REQUIRE(guard[i] == 0x5a);
+  }
+}
+
+TEST_CASE("freelist recovers a whole region for every three-block free order", "[freelist][coalescing]") {
+  constexpr std::array<std::array<std::size_t, 3>, 6> orders{{
+      {0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}}};
+  for (const auto& order : orders) {
+    CAPTURE(order[0], order[1], order[2]);
+    FreeListAllocator allocator;
+    std::array<void*, 3> blocks{
+        allocator.allocate(64), allocator.allocate(64),
+        allocator.allocate(blockCapacity - 128 - 2 * sizeof(FreeNodeHeader))};
+    for (auto index : order) {
+      allocator.deallocate(blocks[index]);
+    }
+    CHECK(allocator.allocate(blockCapacity) == blocks[0]);
+  }
+}
+
+TEST_CASE("freelist does not coalesce across a live allocation", "[freelist][coalescing]") {
+  FreeListAllocator allocator;
+  void* first = allocator.allocate(64);
+  auto* guard = static_cast<unsigned char*>(allocator.allocate(64));
+  void* last = allocator.allocate(blockCapacity - 128 - 2 * sizeof(FreeNodeHeader));
+  std::memset(guard, 0x5a, 64);
+  allocator.deallocate(first);
+  allocator.deallocate(last);
+
+  // Only a new region can satisfy a full-capacity request while guard is live.
+  auto* large = static_cast<unsigned char*>(allocator.allocate(blockCapacity));
+  REQUIRE(large != first);
+  std::memset(large, 0xa5, blockCapacity);
+  for (std::size_t i = 0; i < 64; ++i) {
+    REQUIRE(guard[i] == 0x5a);
+  }
+  allocator.deallocate(guard);
+  CHECK(allocator.allocate(blockCapacity) == first);
+}
+
+TEST_CASE("freelist destructor unmaps every owned region", "[freelist][regions]") {
+  std::array<void*, 3> bases{};
+  std::array<int, 3> before{};
+  std::array<int, 3> after{};
+  {
+    FreeListAllocator allocator;
+    std::array<void*, 3> blocks{};
+    for (std::size_t i = 0; i < blocks.size(); ++i) {
+      blocks[i] = allocator.allocate(blockCapacity);
+      bases[i] = static_cast<std::byte*>(blocks[i]) - sizeof(FreeNodeHeader) - regionHeaderSize;
+      before[i] = mappingState(bases[i]);
+    }
+    // Cleanup must find both free and fully allocated regions.
+    allocator.deallocate(blocks[1]);
+  }
+  // Query immediately, before assertion/reporting code can allocate memory.
+  for (std::size_t i = 0; i < bases.size(); ++i) {
+    after[i] = mappingState(bases[i]);
+  }
+  for (std::size_t i = 0; i < bases.size(); ++i) {
+    CAPTURE(i);
+    CHECK(before[i] == 1);
+    CHECK(after[i] == 0);
+  }
+}
+
+TEST_CASE("freelist can destroy an unused allocator", "[freelist][regions]") {
+  REQUIRE_NOTHROW([] { FreeListAllocator allocator; }());
 }

@@ -61,6 +61,14 @@ public:
       void* byte_block = fetchNewBlock();
 
       current_node = new (byte_block) FreeNodeHeader{nullptr, BLOCK_CAPACITY};
+
+      link = &head_;
+      while (*link != nullptr && std::less<FreeNodeHeader*>{}(*link, current_node)) {
+        link = &(*link)->next;
+      }
+
+      current_node->next = (*link);
+      *link = current_node;
     }
 
     std::byte* allocated_ptr{reinterpret_cast<std::byte*>(current_node) + HEADER_SIZE};
