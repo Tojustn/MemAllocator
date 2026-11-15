@@ -25,6 +25,7 @@ target_include_directories(
 
 option(MEMORY_ALLOCATORS_BUILD_TESTS "Build the test suite" ON)
 option(MEMORY_ALLOCATORS_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option(MEMORY_ALLOCATORS_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
 if(MEMORY_ALLOCATORS_BUILD_TESTS AND EXISTS "${PROJECT_SOURCE_DIR}/tests/CMakeLists.txt")
     include(CTest)
