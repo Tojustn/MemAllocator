@@ -13,17 +13,27 @@
 // Only the arena needs reset(); other allocators reclaim slots in deallocate().
 struct MallocAdapter {
   static constexpr const char* name = "malloc";
-  void* allocate(std::size_t n) noexcept { return std::malloc(n); }
-  void deallocate(void* p) noexcept { std::free(p); }
-  void reset() noexcept {}
+  void* allocate(std::size_t n) noexcept {
+    return std::malloc(n);
+  }
+  void deallocate(void* p) noexcept {
+    std::free(p);
+  }
+  void reset() noexcept {
+  }
 };
 
 struct FreeListAdapter {
   static constexpr const char* name = "freelist";
   FreeListAllocator a;
-  void* allocate(std::size_t n) { return a.allocate(n); }
-  void deallocate(void* p) noexcept { a.deallocate(p); }
-  void reset() noexcept {}
+  void* allocate(std::size_t n) {
+    return a.allocate(n);
+  }
+  void deallocate(void* p) noexcept {
+    a.deallocate(p);
+  }
+  void reset() noexcept {
+  }
 };
 
 // Capacity must cover all allocations between resets, including alignment padding.
@@ -33,9 +43,14 @@ struct ArenaAdapter {
   static constexpr const char* name = "arena";
   static constexpr std::size_t kCapacity = Capacity;
   ArenaAllocator<Capacity> a;
-  void* allocate(std::size_t n) noexcept { return a.allocate(n); }
-  void deallocate(void*) noexcept {} // Reclaimed together by reset().
-  void reset() noexcept { a.reset(); }
+  void* allocate(std::size_t n) noexcept {
+    return a.allocate(n);
+  }
+  void deallocate(void*) noexcept {
+  } // Reclaimed together by reset().
+  void reset() noexcept {
+    a.reset();
+  }
 };
 
 template <std::size_t SlotSize = 64>
@@ -54,6 +69,9 @@ struct PoolAdapter {
     }
     return a.allocate();
   }
-  void deallocate(void* p) noexcept { a.deallocate(static_cast<Slot*>(p)); }
-  void reset() noexcept {}
+  void deallocate(void* p) noexcept {
+    a.deallocate(static_cast<Slot*>(p));
+  }
+  void reset() noexcept {
+  }
 };
