@@ -1,15 +1,12 @@
 
 #pragma once
+#include "mmap_region.hpp"
 
 #include <cstddef>
 #include <functional>
 #include <new>
 #include <sys/mman.h>
 
-// Linked list of mmap regions for munmap usage
-struct MmapRegion {
-  MmapRegion* next;
-};
 struct FreeNodeHeader {
   FreeNodeHeader* next;
   std::size_t size;
@@ -20,7 +17,7 @@ struct FreeNodeHeader {
 class FreeListAllocator {
 public:
   FreeListAllocator() = default;
-  ~FreeListAllocator() {
+  ~FreeListAllocator() noexcept {
     MmapRegion* current = regions_;
 
     while (current != nullptr) {
@@ -87,7 +84,7 @@ public:
   }
 
   // Deallocate the ptr, can be from any address we allocated not just the end
-  void deallocate(void* ptr) {
+  void deallocate(void* ptr) noexcept {
     if (ptr == nullptr) {
       return;
     }

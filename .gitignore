@@ -1,3 +1,20 @@
 /build/
 /cmake-build-*/
 /compile_commands.json
+
+# Editor caches
+/.cache/
+
+# Local compiler outputs
+/pool
+/pool_test
+/allocator_bench
+*.o
+*.gch
+*.pch
+*.dSYM/
+
+# Python and macOS generated files
+__pycache__/
+*.pyc
+.DS_Store

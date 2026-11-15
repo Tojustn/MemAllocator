@@ -1,3 +1,8 @@
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  message(STATUS "Allocator tests are Linux-only; skipping on ${CMAKE_SYSTEM_NAME}")
+  return()
+endif()
+
 include(FetchContent)
 
 find_package(Catch2 3 CONFIG QUIET)
@@ -12,7 +17,7 @@ if(NOT Catch2_FOUND)
   FetchContent_MakeAvailable(Catch2)
 endif()
 
-add_executable(memory_allocators_tests arena_test.cpp freelist_test.cpp)
+add_executable(memory_allocators_tests arena_test.cpp freelist_test.cpp pool_test.cpp)
 
 target_link_libraries(
   memory_allocators_tests

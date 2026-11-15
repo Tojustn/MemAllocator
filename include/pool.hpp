@@ -1,47 +1,69 @@
 #pragma once
+#include "mmap_region.hpp"
+#include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <new>
 #include <sys/mman.h>
-struct MmapRegion {
-  MmapRegion* next;
-};
 struct FreeSlot {
   FreeSlot* next;
 };
 template <typename T>
 class PoolAllocator {
 public:
-  PoolAllocator() {
-    static_assert(OBJECT_SIZE <= BLOCK_CAPACITY, "OBJECT SIZE cannot be greater than block capacity");
+  PoolAllocator() noexcept {
+    static_assert(SLOT_SIZE <= BLOCK_CAPACITY, "Slot size cannot be greater than block capacity");
   };
+  ~PoolAllocator() noexcept {
+    while (regions_ != nullptr) {
+      MmapRegion* next_region = regions_->next;
+      munmap(static_cast<void*>(regions_), REGION_SIZE);
+      regions_ = next_region;
+    }
+  }
+
+  PoolAllocator(const PoolAllocator&) = delete;
+  PoolAllocator& operator=(const PoolAllocator&) = delete;
 
   T* allocate() {
-    if (end_ == nullptr || end_ - cursor_ < OBJECT_ALIGNED_SIZE) {
-      cursor_ = fetchNewBlock() + REGION_HEADER_SIZE;
-      end_ = cursor_ + BLOCK_CAPACITY;
-    }
     T* return_ptr{nullptr};
-
     // Try inner blocks first
     if (free_slot_ != nullptr) {
       return_ptr = reinterpret_cast<T*>(free_slot_);
       free_slot_ = free_slot_->next;
       return return_ptr;
     }
-    else {
-      return_ptr = cursor_;
-      cursor_ += OBJECT_SIZE;
+
+    if (end_ == nullptr || static_cast<std::size_t>(end_ - cursor_) < SLOT_SIZE) {
+      cursor_ = fetchNewBlock();
+      end_ = cursor_ + BLOCK_CAPACITY;
     }
+
+    return_ptr = reinterpret_cast<T*>(cursor_);
+    cursor_ += SLOT_SIZE;
+    return return_ptr;
+  }
+
+  void deallocate(T* ptr) noexcept {
+    if (ptr == nullptr) {
+      return;
+    }
+    // deallocate -> if in middle put in free slots
+
+    // Do we care about keepign free slots sorted? logn insertions
+    // Prob not doesnt really matter
+    FreeSlot* new_slot = new (static_cast<void*>(ptr)) FreeSlot{free_slot_};
+    free_slot_ = new_slot;
   }
 
 private:
   constexpr static std::size_t REGION_SIZE{4096};
-  constexpr static std::size_t OBJECT_SIZE{sizeof(T)};
-  static constexpr std::size_t REGION_HEADER_SIZE =
-      (sizeof(MmapRegion) + alignof(MmapRegion) - 1) & ~(alignof(MmapRegion) - 1);
+  static constexpr std::size_t SLOT_ALIGNMENT = std::max(alignof(T), alignof(FreeSlot));
+  static constexpr std::size_t SLOT_SIZE =
+      (std::max(sizeof(T), sizeof(FreeSlot)) + SLOT_ALIGNMENT - 1) & ~(SLOT_ALIGNMENT - 1);
+  static constexpr std::size_t REGION_HEADER_SIZE = (sizeof(MmapRegion) + SLOT_ALIGNMENT - 1) & ~(SLOT_ALIGNMENT - 1);
+  static_assert(REGION_HEADER_SIZE < REGION_SIZE, "Aligned header must fit within the region");
   static constexpr std::size_t BLOCK_CAPACITY = REGION_SIZE - REGION_HEADER_SIZE;
-  // GEt the aligned size
-  static constexpr std::size_t OBJECT_ALIGNED_SIZE = (OBJECT_SIZE + alignof(T) - 1) & ~(alignof(T) - 1);
 
   FreeSlot* free_slot_{nullptr};
   // cursor keeps track of the current "size"
@@ -49,7 +71,7 @@ private:
   std::byte* end_{nullptr};
 
   MmapRegion* regions_{nullptr};
-  void* fetchNewBlock() {
+  std::byte* fetchNewBlock() {
     // mmap is automatically page aligned
     void* byte_block = mmap(nullptr, REGION_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 

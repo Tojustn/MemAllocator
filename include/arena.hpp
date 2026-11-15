@@ -13,7 +13,7 @@ public:
   ArenaAllocator(const ArenaAllocator&) = delete;
   ArenaAllocator& operator=(const ArenaAllocator&) = delete;
 
-  void* allocate(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t)) {
+  void* allocate(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t)) noexcept {
     assert(alignment != 0 && (alignment & (alignment - 1)) == 0 && alignment <= 64);
 
     // Round offset up to the next multiple of alignment

@@ -8,44 +8,17 @@
 #include <cstring>
 #include <limits>
 
-#if defined(__APPLE__)
-#include <mach/mach.h>
-#include <mach/mach_vm.h>
-#endif
-
 namespace {
 constexpr std::size_t alignment = alignof(std::max_align_t);
 constexpr std::size_t regionHeaderSize = (sizeof(MmapRegion) + alignment - 1) & ~(alignment - 1);
 constexpr std::size_t blockCapacity = 4096 - regionHeaderSize - sizeof(FreeNodeHeader);
 // Return 1 for mapped memory, 0 for unmapped memory, -1 for query errors.
 int mappingState(void* base) {
-#if defined(__APPLE__)
-  const auto requested = reinterpret_cast<mach_vm_address_t>(base);
-  mach_vm_address_t address = requested;
-  mach_vm_size_t size = 0;
-  vm_region_basic_info_data_64_t info{};
-  mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
-  mach_port_t object = MACH_PORT_NULL;
-  const auto result = mach_vm_region(mach_task_self(), &address, &size,
-      VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info), &count, &object);
-  if (object != MACH_PORT_NULL) {
-    mach_port_deallocate(mach_task_self(), object);
-  }
-  if (result == KERN_INVALID_ADDRESS) {
-    return 0;
-  }
-  if (result != KERN_SUCCESS) {
-    return -1;
-  }
-  // The query can return the next mapping after an unmapped address.
-  return address <= requested && requested - address < size ? 1 : 0;
-#else
   unsigned char residency = 0;
   if (mincore(base, 1, &residency) == 0) {
     return 1;
   }
   return errno == ENOMEM ? 0 : -1;
-#endif
 }
 } // namespace
 
