@@ -151,18 +151,10 @@ std::vector<Nanoseconds> benchmarkAllocation(std::size_t size) {
   return times;
 }
 
-// Scenario 2: allocation allocation_only
-allocator, runs, batches_per_run, avg_p50_batch_ns, avg_p99_batch_ns malloc, 5, 1000, 4775, 5612 freelist, 5, 1000,
-    1380, 1769 arena, 5, 1000, 922, 1064 pool, 5, 1000, 1164,
-    1260
-
-    random_deallocation allocator,
-    runs, batches_per_run, avg_p50_batch_ns, avg_p99_batch_ns malloc, 5, 1000, 7784, 11601 freelist, 5, 1000, 2286,
-    3408 pool, 5, 1000, 1693,
-    1909with random deallocation
-    // pre allocate live ptrs, then deallocate randomly and allocate right after
-    template <BenchmarkAllocator Alloc>
-    std::vector<Nanoseconds> benchmarkRandomDeallocation(std::size_t size) {
+// Scenario 2: allocation with random deallocation
+// Preallocate live pointers, then replace randomly selected allocations.
+template <BenchmarkAllocator Alloc>
+std::vector<Nanoseconds> benchmarkRandomDeallocation(std::size_t size) {
   Alloc allocator{};
 
   std::vector<Nanoseconds> times;
