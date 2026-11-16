@@ -118,12 +118,16 @@ Each worker performs one million allocation/deallocation pairs in batches of
 256 live, 64-byte objects. Results are aggregate million pairs per second,
 reported as the median of five runs after warmup.
 
-| Allocator | 1 thread | 2 threads | 4 threads | 8 threads |
-|---|---:|---:|---:|---:|
-| glibc `malloc` | 76.9 M pairs/s | 139.4 M pairs/s | 292.0 M pairs/s | 422.6 M pairs/s |
-| Global-lock pool | 88.8 M pairs/s | 15.7 M pairs/s | 13.4 M pairs/s | 10.4 M pairs/s |
-| Thread-caching pool | 295.9 M pairs/s | 121.3 M pairs/s | 99.2 M pairs/s | 82.4 M pairs/s |
-| Thread cache, no timed transfers | 429.9 M pairs/s | 853.3 M pairs/s | 1,817.8 M pairs/s | 3,295.8 M pairs/s |
+| Allocator | Batch | Cache capacity | Refill | 1 thread | 2 threads | 4 threads | 8 threads |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| glibc `malloc` | 256 | — | — | 76.9 M pairs/s | 139.4 M pairs/s | 292.0 M pairs/s | 422.6 M pairs/s |
+| Global-lock pool | 256 | — | — | 88.8 M pairs/s | 15.7 M pairs/s | 13.4 M pairs/s | 10.4 M pairs/s |
+| Thread-caching pool | 256 | 128 | 32 | 295.9 M pairs/s | 121.3 M pairs/s | 99.2 M pairs/s | 82.4 M pairs/s |
+| Thread cache, no timed transfers | 256 | 256 | 256 | 429.9 M pairs/s | 853.3 M pairs/s | 1,817.8 M pairs/s | 3,295.8 M pairs/s |
+
+Batch is the number of live objects per worker; cache capacity and refill are
+objects per thread. A dash means the benchmark does not configure that parameter.
+Both thread-cache configurations flush 32 objects when capacity is exceeded.
 
 Batching improves throughput over a global lock, but the normal thread cache
 loses throughput as threads increase because refills and flushes contend on the
