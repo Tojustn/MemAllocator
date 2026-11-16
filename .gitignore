@@ -7,9 +7,12 @@
 /.cache/
 
 # Local compiler outputs
+/script
 /pool
 /pool_test
 /allocator_bench
+/allocator_thread_bench
+/memory_allocators_tests
 *.o
 *.gch
 *.pch
